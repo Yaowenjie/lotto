@@ -494,7 +494,50 @@ with tabs[1]:
                             saved_ids.append(pid)
                         st.success(f"✅ 已保存 {len(saved_ids)} 条记录 (期号: {expect_input})")
 
+            # 预测记录展示（保存后不 rerun，让记录继续可见）
             st.markdown("---")
+            st.markdown("#### 📋 预测记录")
+
+            saved_rows = get_predictions(50, lottery_type=lt)
+            if saved_rows:
+                saved_data = []
+                for r in saved_rows:
+                    if lt == LotteryType.SSQ:
+                        saved_data.append({
+                            "ID": r["id"],
+                            "期号": r["expect"],
+                            "策略": STRATEGY_NAMES.get(r["strategy_key"], r["strategy_key"]),
+                            "红球": r["red_balls"],
+                            "蓝球": r["blue_ball"],
+                            "保存时间": r["predicted_at"],
+                            "中奖": "✅" if r["red_hit"] >= 3 else
+                                    ("—" if r["red_hit"] == 0 else f"中{r['red_hit']}红"),
+                        })
+                    else:
+                        saved_data.append({
+                            "ID": r["id"],
+                            "期号": r["expect"],
+                            "策略": STRATEGY_NAMES.get(r["strategy_key"], r["strategy_key"]),
+                            "前区": r["front_balls"],
+                            "后区": r["back_balls"],
+                            "保存时间": r["predicted_at"],
+                            "中奖": "✅" if r["front_hit"] >= 3 else
+                                    ("—" if r["front_hit"] == 0 else f"中{r['front_hit']}前"),
+                        })
+
+                st.dataframe(pd.DataFrame(saved_data), use_container_width=True,
+                             hide_index=True, height=350)
+
+                cc1, cc2 = st.columns([1, 4])
+                with cc1:
+                    if st.button("🗑 清空当前彩种记录", key="btn_clear_preds"):
+                        clear_predictions(lottery_type=lt)
+                        st.rerun()
+            else:
+                st.info("暂无保存记录")
+
+            st.markdown("---")
+
 
             # 预测结果 — 球号可视化
             st.markdown(f"#### 📋 预测结果 ({n_bets} 组)")
@@ -562,48 +605,6 @@ with tabs[1]:
                 for k, d in desc_map.items():
                     st.markdown(f"**{STRATEGY_NAMES[k]}**: {d}")
 
-            # ── 常驻历史保存记录 ───────────────────────────────
-            st.markdown("---")
-            st.markdown("#### 📋 预测记录")
-
-            saved_rows = get_predictions(50, lottery_type=lt)
-            if saved_rows:
-                saved_data = []
-                for r in saved_rows:
-                    if lt == LotteryType.SSQ:
-                        saved_data.append({
-                            "ID": r["id"],
-                            "期号": r["expect"],
-                            "策略": STRATEGY_NAMES.get(r["strategy_key"], r["strategy_key"]),
-                            "红球": r["red_balls"],
-                            "蓝球": r["blue_ball"],
-                            "保存时间": r["predicted_at"],
-                            "中奖": "✅" if r["red_hit"] >= 3 else
-                                    ("—" if r["red_hit"] == 0 else f"中{r['red_hit']}红"),
-                        })
-                    else:
-                        saved_data.append({
-                            "ID": r["id"],
-                            "期号": r["expect"],
-                            "策略": STRATEGY_NAMES.get(r["strategy_key"], r["strategy_key"]),
-                            "前区": r["front_balls"],
-                            "后区": r["back_balls"],
-                            "保存时间": r["predicted_at"],
-                            "中奖": "✅" if r["front_hit"] >= 3 else
-                                    ("—" if r["front_hit"] == 0 else f"中{r['front_hit']}前"),
-                        })
-
-                st.dataframe(pd.DataFrame(saved_data), use_container_width=True,
-                             hide_index=True, height=350)
-
-                cc1, cc2 = st.columns([1, 4])
-                with cc1:
-                    if st.button("🗑 清空当前彩种记录", key="btn_clear_preds"):
-                        clear_predictions(lottery_type=lt)
-                        st.rerun()
-            else:
-                st.info("暂无保存记录，点击上方「💾 保存所有预测」按钮可保存")
-
 
 # ═══════════════════════════════════════════════════════════════
 # Tab 2: 回测
@@ -613,7 +614,7 @@ with tabs[2]:
     st.markdown("用历史数据验证各策略的预测效果，滑动窗口模拟真实预测")
 
     # 参数行
-    p_col1, p_col2, p_col3 = st.columns([1, 1, 2])
+    p_col1, p_col2 = st.columns(2)
     with p_col1:
         lookback = st.slider("参考期数", 10, 50, 30, key="slider_lookback",
                              help="用多少期历史数据做预测依据")
