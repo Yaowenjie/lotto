@@ -120,3 +120,115 @@ def get_dlt_count() -> int:
     cnt = cur.fetchone()[0]
     conn.close()
     return cnt
+
+
+# ─────────────────────────────────────────────────────────────
+# 预测记录表
+# ─────────────────────────────────────────────────────────────
+
+def init_predictions():
+    """创建预测记录表"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lottery_type TEXT NOT NULL,
+            strategy_key TEXT NOT NULL,
+            expect TEXT NOT NULL,
+            predicted_at TEXT NOT NULL,
+            red_balls TEXT,
+            blue_ball TEXT,
+            front_balls TEXT,
+            back_balls TEXT,
+            red_hit INTEGER DEFAULT 0,
+            blue_hit INTEGER DEFAULT 0,
+            front_hit INTEGER DEFAULT 0,
+            back_hit INTEGER DEFAULT 0,
+            rank INTEGER DEFAULT 0
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def save_prediction(
+    lottery_type: str,
+    strategy_key: str,
+    expect: str,
+    red_balls: str = None,
+    blue_ball: str = None,
+    front_balls: str = None,
+    back_balls: str = None,
+) -> int:
+    """保存一组预测，返回自增id"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO predictions
+        (lottery_type, strategy_key, expect, predicted_at,
+         red_balls, blue_ball, front_balls, back_balls)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        lottery_type, strategy_key, expect,
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        red_balls, blue_ball, front_balls, back_balls
+    ))
+    pid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return pid
+
+
+def update_prediction_result(pred_id: int, red_hit: int = 0, blue_hit: int = 0,
+                              front_hit: int = 0, back_hit: int = 0, rank: int = 0):
+    """更新预测记录的中奖结果"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE predictions
+        SET red_hit=?, blue_hit=?, front_hit=?, back_hit=?, rank=?
+        WHERE id=?
+    """, (red_hit, blue_hit, front_hit, back_hit, rank, pred_id))
+    conn.commit()
+    conn.close()
+
+
+def get_predictions(limit: int = 50, lottery_type: str = None) -> List[sqlite3.Row]:
+    """查询预测记录"""
+    conn = get_conn()
+    cur = conn.cursor()
+    if lottery_type:
+        cur.execute(
+            "SELECT * FROM predictions WHERE lottery_type=? ORDER BY id DESC LIMIT ?",
+            (lottery_type, limit)
+        )
+    else:
+        cur.execute(
+            "SELECT * FROM predictions ORDER BY id DESC LIMIT ?",
+            (limit,)
+        )
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def delete_prediction(pred_id: int):
+    """删除一条预测记录"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM predictions WHERE id=?", (pred_id,))
+    conn.commit()
+    conn.close()
+
+
+def clear_predictions(lottery_type: str = None):
+    """清空预测记录"""
+    conn = get_conn()
+    cur = conn.cursor()
+    if lottery_type:
+        cur.execute("DELETE FROM predictions WHERE lottery_type=?", (lottery_type,))
+    else:
+        cur.execute("DELETE FROM predictions")
+    conn.commit()
+    conn.close()

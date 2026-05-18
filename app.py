@@ -7,7 +7,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 import streamlit as st
 import pandas as pd
 from database.db import init_db, get_ssq_history, get_dlt_history, \
-    get_ssq_count, get_dlt_count, upsert_ssq, upsert_dlt
+    get_ssq_count, get_dlt_count, upsert_ssq, upsert_dlt, \
+    init_predictions, save_prediction, get_predictions, delete_prediction, \
+    clear_predictions
 from fetcher.ssq_fetcher import fetch_ssq_history
 from fetcher.dlt_fetcher import fetch_dlt_history
 from predictor.engine import PredictorEngine, STRATEGY_NAMES
@@ -19,6 +21,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 init_db()
+init_predictions()
 
 # ─────────────────────────────────────────────────────────────
 # 主题配置
@@ -431,6 +434,68 @@ with tabs[1]:
 
             st.markdown("---")
 
+            # ── 保存区域 ────────────────────────────────────────
+            st.markdown("#### 💾 保存预测")
+
+            # 期号输入 + 保存按钮 同一行
+            pred_col1, pred_col2 = st.columns([2, 1])
+            with pred_col1:
+                # 默认为最新一期期号+1
+                next_expect = ""
+                if rows:
+                    latest_row = rows[0]
+                    expect_str = latest_row["expect"]
+                    if expect_str and expect_str.isdigit() and len(expect_str) >= 7:
+                        try:
+                            year = int(expect_str[:4])
+                            seq = int(expect_str[4:])
+                            next_seq = seq + 1
+                            # 期号超过最大期数则进位年份（粗略处理）
+                            if next_seq > 9999:
+                                year += 1
+                                next_seq = 1
+                            next_expect = f"{year}{next_seq:04d}"
+                        except Exception:
+                            next_expect = ""
+                expect_input = st.text_input(
+                    "**期号**（保存到哪一期）",
+                    value=next_expect,
+                    placeholder="如: 2026056",
+                    key="pred_expect_input"
+                )
+
+            with pred_col2:
+                st.markdown("")  # 对齐
+                if st.button("💾 保存所有预测", key="btn_save_preds", use_container_width=True):
+                    if not expect_input.strip():
+                        st.warning("请输入期号")
+                    else:
+                        saved_ids = []
+                        for res in results:
+                            if lt == LotteryType.SSQ:
+                                red_str = ",".join(f"{n:02d}" for n in res["red"])
+                                pid = save_prediction(
+                                    lottery_type="ssq",
+                                    strategy_key=strategy_key,
+                                    expect=expect_input.strip(),
+                                    red_balls=red_str,
+                                    blue_ball=f"{res['blue']:02d}"
+                                )
+                            else:
+                                front_str = ",".join(f"{n:02d}" for n in res["front"])
+                                back_str = ",".join(f"{n:02d}" for n in res["back"])
+                                pid = save_prediction(
+                                    lottery_type="dlt",
+                                    strategy_key=strategy_key,
+                                    expect=expect_input.strip(),
+                                    front_balls=front_str,
+                                    back_balls=back_str
+                                )
+                            saved_ids.append(pid)
+                        st.success(f"✅ 已保存 {len(saved_ids)} 条记录 (期号: {expect_input})")
+
+            st.markdown("---")
+
             # 预测结果 — 球号可视化
             st.markdown(f"#### 📋 预测结果 ({n_bets} 组)")
 
@@ -496,6 +561,48 @@ with tabs[1]:
                 }
                 for k, d in desc_map.items():
                     st.markdown(f"**{STRATEGY_NAMES[k]}**: {d}")
+
+            # ── 常驻历史保存记录 ───────────────────────────────
+            st.markdown("---")
+            st.markdown("#### 📋 预测记录")
+
+            saved_rows = get_predictions(50, lottery_type=lt)
+            if saved_rows:
+                saved_data = []
+                for r in saved_rows:
+                    if lt == LotteryType.SSQ:
+                        saved_data.append({
+                            "ID": r["id"],
+                            "期号": r["expect"],
+                            "策略": STRATEGY_NAMES.get(r["strategy_key"], r["strategy_key"]),
+                            "红球": r["red_balls"],
+                            "蓝球": r["blue_ball"],
+                            "保存时间": r["predicted_at"],
+                            "中奖": "✅" if r["red_hit"] >= 3 else
+                                    ("—" if r["red_hit"] == 0 else f"中{r['red_hit']}红"),
+                        })
+                    else:
+                        saved_data.append({
+                            "ID": r["id"],
+                            "期号": r["expect"],
+                            "策略": STRATEGY_NAMES.get(r["strategy_key"], r["strategy_key"]),
+                            "前区": r["front_balls"],
+                            "后区": r["back_balls"],
+                            "保存时间": r["predicted_at"],
+                            "中奖": "✅" if r["front_hit"] >= 3 else
+                                    ("—" if r["front_hit"] == 0 else f"中{r['front_hit']}前"),
+                        })
+
+                st.dataframe(pd.DataFrame(saved_data), use_container_width=True,
+                             hide_index=True, height=350)
+
+                cc1, cc2 = st.columns([1, 4])
+                with cc1:
+                    if st.button("🗑 清空当前彩种记录", key="btn_clear_preds"):
+                        clear_predictions(lottery_type=lt)
+                        st.rerun()
+            else:
+                st.info("暂无保存记录，点击上方「💾 保存所有预测」按钮可保存")
 
 
 # ═══════════════════════════════════════════════════════════════
