@@ -119,7 +119,8 @@ st.markdown("""
 # ─────────────────────────────────────────────────────────────
 def rows_to_list(rows, ltype):
     result = []
-    for r in reversed(list(rows)):
+    # DB 查询已是 ORDER BY expect DESC（最新在前），直接遍历即可
+    for r in rows:
         if ltype == LotteryType.SSQ:
             result.append({
                 "expect": r["expect"], "date": r["date"],
